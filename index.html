@@ -32,7 +32,7 @@ body{margin:0;background:#061b24;color:var(--text);font-family:system-ui,-apple-
 .nav .btn,.quicknav .btn{background:radial-gradient(ellipse at 50% 34%,#161a1d 0%,#0d1114 56%,#05080a 100%);box-shadow:0 7px 12px rgba(0,0,0,.36),inset 0 3px 5px rgba(255,255,255,.05),inset 0 -12px 17px rgba(0,0,0,.7)}.nav .ok,.quicknav .ok{background:radial-gradient(ellipse at 50% 34%,#181c1f 0%,#0e1215 56%,#050709 100%)}
 .bottom{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}
 .setup{position:fixed;inset:0;background:rgba(3,7,24,.92);display:none;align-items:flex-end;z-index:5}.setup.open{display:flex}.sheet{width:100%;max-width:520px;margin:auto;background:#101936;border-radius:24px 24px 0 0;padding:20px 16px calc(env(safe-area-inset-bottom) + 18px);border:1px solid var(--line)}
-input,select{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:#0b1230;color:white;font-size:16px;margin:5px 0 12px}.row{display:flex;gap:8px}.row>*{flex:1}.note{font-size:12px;color:var(--muted);line-height:1.4}
+input,select{width:100%;padding:13px;border-radius:12px;border:1px solid var(--line);background:#0b1230;color:white;font-size:16px;margin:5px 0 12px}.row{display:flex;gap:8px}.row>*{flex:1}.note{font-size:12px;color:var(--muted);line-height:1.4}.connection-state{margin:0 0 12px;padding:9px 11px;border:1px solid var(--line);border-radius:12px;background:#0b1230;color:#d8dde0;font-size:13px}
 .gear{border:1px solid rgba(0,0,0,.78);background:radial-gradient(ellipse at 50% 35%,#252b2f,#12171a 72%);color:#d8dde0;border-radius:14px;padding:8px 11px;box-shadow:0 4px 8px rgba(0,0,0,.28),inset 0 2px 3px rgba(255,255,255,.05),inset 0 -5px 8px rgba(0,0,0,.55)}
 @media(max-height:690px){.btn{min-height:46px}.num{min-height:46px}.rocker{grid-template-rows:52px 30px 52px;gap:6px}.rocker>.btn{height:52px;min-height:52px}.rocker-mid{height:30px}.btn.mute-center{top:58px;height:30px;min-height:30px}.quicknav{grid-template-columns:72px;grid-template-rows:42px 40px 42px;gap:6px;margin:8px auto 6px}.nav{grid-template-columns:72px 96px 72px;grid-template-rows:72px 96px 72px;gap:10px}.nav .btn{font-size:22px}.nav .ok{font-size:19px}.section{margin-top:6px}.group-gap{height:6px;flex-basis:6px}}
 </style>
@@ -42,7 +42,7 @@ input,select{width:100%;padding:13px;border-radius:12px;border:1px solid var(--l
   <div class="top">
     <div class="brand" aria-label="Samsung">SΛMSUNG</div>
     <div class="status" aria-live="polite"><span id="dot" class="dot"></span><span id="status">Demo mode</span></div>
-    <div class="header-actions"><button class="gear" id="setupBtn" aria-label="Settings and version 17">⚙︎</button></div>
+    <div class="header-actions"><button class="gear" id="setupBtn" aria-label="Settings and version 18">⚙︎</button></div>
   </div>
   <div class="pages" id="pages">
     <section class="page" aria-label="Channels remote">
@@ -71,28 +71,39 @@ input,select{width:100%;padding:13px;border-radius:12px;border:1px solid var(--l
     </section>
   </div>
 </main>
-<div class="setup" id="setup"><div class="sheet"><h2 style="margin:0 0 6px">TV connection</h2><div class="note" style="margin-bottom:12px">Samsung Remote · Version 17</div><label>Mode</label><select id="mode"><option value="demo">Demo — test buttons only</option><option value="direct">Direct secure WebSocket — experimental</option></select><label>TV IP address</label><input id="host" inputmode="decimal" placeholder="192.168.1.123"><label>Pairing token (optional)</label><input id="token" placeholder="Leave blank for first pairing"><div class="row"><button class="btn" id="save">Save & connect</button><button class="btn" id="close">Close</button></div><p class="note">Direct mode uses the Samsung Tizen WebSocket on port 8002. The TV may ask you to allow “Bills Samsung Remote.” iPhone/Safari may reject the TV’s self-signed certificate; if that happens, we’ll move the transport into a small trusted bridge/native wrapper.</p></div></div>
+<div class="setup" id="setup"><div class="sheet"><h2 style="margin:0 0 6px">TV connection</h2><div class="note" style="margin-bottom:8px">Samsung Remote · Version 18</div><div class="connection-state" id="connectionState">Status: Demo mode</div><label>Mode</label><select id="mode"><option value="demo">Demo — test buttons only</option><option value="direct">Direct — try port 8001, then 8002</option></select><label>TV IP address</label><input id="host" inputmode="decimal" placeholder="192.168.1.123"><label>Pairing token (optional)</label><input id="token" placeholder="Leave blank for first pairing"><div class="row"><button class="btn" id="save">Save & connect</button><button class="btn" id="close">Close</button></div><p class="note">Direct mode first tries Samsung’s unencrypted WebSocket on port 8001, then falls back to secure port 8002. Because this app is hosted over HTTPS, Safari may block port 8001 as mixed content; port 8002 may also be rejected if the TV uses a self-signed certificate. The status above tells us which step failed.</p></div></div>
 <script>
-const $=s=>document.querySelector(s), statusEl=$('#status'), dot=$('#dot');
-let ws=null;
+const $=s=>document.querySelector(s), statusEl=$('#status'), dot=$('#dot'), connectionState=$('#connectionState');
+let ws=null, connectionAttempt=0;
 const prefs=JSON.parse(localStorage.getItem('samsungRemotePrefs')||'{}');
 for(let i=1;i<=9;i++){const b=document.createElement('button');b.className='btn num';b.textContent=i;b.dataset.key='KEY_'+i;$('#numbers').appendChild(b)}
-function setStatus(text,on=false){statusEl.textContent=text;dot.classList.toggle('on',on)}
+function setStatus(text,on=false){statusEl.textContent=text;dot.classList.toggle('on',on);if(connectionState)connectionState.textContent='Status: '+text}
 function b64(s){return btoa(unescape(encodeURIComponent(s)))}
+function remotePath(){let path=`/api/v2/channels/samsung.remote.control?name=${encodeURIComponent(b64('Bills Samsung Remote'))}`;if(prefs.token)path+=`&token=${encodeURIComponent(prefs.token)}`;return path}
+function openSocket(url,label,fallback){
+  connectionAttempt++;
+  const attempt=connectionAttempt;
+  setStatus(`Trying ${label}…`);
+  try{
+    const socket=new WebSocket(url);
+    ws=socket;
+    let opened=false;
+    const timer=setTimeout(()=>{if(attempt===connectionAttempt&&!opened){try{socket.close()}catch{};fallback?.()}},3500);
+    socket.onopen=()=>{if(attempt!==connectionAttempt)return;opened=true;clearTimeout(timer);setStatus(`Connected via ${label}`,true)};
+    socket.onerror=()=>{if(attempt!==connectionAttempt)return;clearTimeout(timer);if(!opened)fallback?.();else setStatus(`${label} connection error`)};
+    socket.onclose=()=>{if(attempt!==connectionAttempt)return;clearTimeout(timer);if(!opened)fallback?.();else if((prefs.mode||'demo')!=='demo')setStatus('Disconnected')};
+    socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.event==='ms.channel.connect'){const t=m?.data?.token;if(t&&!prefs.token){prefs.token=t;localStorage.setItem('samsungRemotePrefs',JSON.stringify(prefs));$('#token').value=t}setStatus(`Connected via ${label}`,true)}}catch{}};
+  }catch{fallback?.()}
+}
 function connect(){
+  connectionAttempt++;
   if(ws){try{ws.close()}catch{}}
+  ws=null;
   if((prefs.mode||'demo')==='demo'){setStatus('Demo mode',false);return}
   if(!prefs.host){setStatus('TV IP needed');return}
-  let url=`wss://${prefs.host}:8002/api/v2/channels/samsung.remote.control?name=${encodeURIComponent(b64('Bills Samsung Remote'))}`;
-  if(prefs.token)url+=`&token=${encodeURIComponent(prefs.token)}`;
-  setStatus('Connecting…');
-  try{
-    ws=new WebSocket(url);
-    ws.onopen=()=>setStatus('Connected',true);
-    ws.onerror=()=>setStatus('Connection blocked');
-    ws.onclose=()=>{if((prefs.mode||'demo')!=='demo')setStatus('Disconnected')};
-    ws.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.event==='ms.channel.connect'){const t=m?.data?.token;if(t&&!prefs.token){prefs.token=t;localStorage.setItem('samsungRemotePrefs',JSON.stringify(prefs))}setStatus('Connected',true)}}catch{}};
-  }catch{setStatus('Connection failed')}
+  const path=remotePath();
+  const try8002=()=>openSocket(`wss://${prefs.host}:8002${path}`,'8002 secure',()=>setStatus('Both 8001 and 8002 failed'));
+  openSocket(`ws://${prefs.host}:8001${path}`,'8001',try8002);
 }
 function send(key){
   navigator.vibrate?.(12);
@@ -101,9 +112,9 @@ function send(key){
   ws.send(JSON.stringify({method:'ms.remote.control',params:{Cmd:'Click',DataOfCmd:key,Option:'false',TypeOfRemote:'SendRemoteKey'}}));
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-key]');if(b){e.preventDefault();send(b.dataset.key)}});
-$('#setupBtn').onclick=()=>{$('#setup').classList.add('open');$('#mode').value=prefs.mode||'demo';$('#host').value=prefs.host||'';$('#token').value=prefs.token||''};
+$('#setupBtn').onclick=()=>{$('#setup').classList.add('open');$('#mode').value=prefs.mode||'demo';$('#host').value=prefs.host||'';$('#token').value=prefs.token||'';connectionState.textContent='Status: '+statusEl.textContent};
 $('#close').onclick=()=>$('#setup').classList.remove('open');
-$('#save').onclick=()=>{prefs.mode=$('#mode').value;prefs.host=$('#host').value.trim();prefs.token=$('#token').value.trim();localStorage.setItem('samsungRemotePrefs',JSON.stringify(prefs));$('#setup').classList.remove('open');connect()};
+$('#save').onclick=()=>{prefs.mode=$('#mode').value;prefs.host=$('#host').value.trim();prefs.token=$('#token').value.trim();localStorage.setItem('samsungRemotePrefs',JSON.stringify(prefs));connect()};
 if('serviceWorker'in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 connect();
 </script>
